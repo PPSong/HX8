@@ -634,6 +634,81 @@ router.post('/createMeetNo', function (req, res) {
                         err: err
                     });
             } else {
+                //通知附近500米内没有specialInfo的人
+                User.find({
+                        lastLocation: {
+                            $near: {
+                                $geometry: {
+                                    type: "Point",
+                                    coordinates: req.user.lastLocation
+                                },
+                                $minDistance: 0,
+                                $maxDistance: 500
+                            }
+                        },
+                        "specialInfo.sex": req.body.sex,
+                        username: {
+                            $ne: req.user.username
+                        },
+                $and: [
+                {$or: [{
+                            lastRemind: {
+                                $exists: false
+                            }
+                        }, {
+                            lastRemind: {
+                                $lt: moment()
+                                    .add(-10, 'm')
+                            }
+                        }]},
+                {$or: [{
+                            specialInfoTime: {
+                                $exists: false
+                            }
+                        }, {
+                            specialInfoTime: {
+                                $lt: moment()
+                                    .startOf('day')
+                                    .add(-8, 'hours')
+                            }
+                        }]}]
+                    }, {
+                        _id: 0,
+                        username: 1
+                    },
+                    function (err, docs) {
+                        if (err) {
+                            console.log(err);
+                        } else {
+                            console.log(docs);
+                            for (var i=0; i < docs.length; i++)
+                            {
+                                //修改最后提醒时间
+                                User.findOneAndUpdate({username: docs[i].username}, {$set: {lastRemind: moment().valueOf()}}, {new: true}, function(err, doc){
+                                    if (err)
+                                    {
+                                        console.log(err);
+                                    }
+                                    else
+                                    {
+                                        //restful 上传到firebase
+                                        request({
+                                                url: 'https://pphx.firebaseio.com/users/'+doc.username+'/.json',
+                                                method: 'PATCH',
+                                                json: {
+                                                    "lastRemind": doc.lastRemind,
+                                                }
+                                            },
+                                            function (error, response, body) {
+                                                console.log(error);
+                                            }
+                                        );
+                                    }
+                                });
+                            }
+                        }
+                    }
+                );
                 res.json({
                     ppResult: 'ok',
                     ppData: result.meet
@@ -974,5 +1049,20 @@ router.post('/sendMeetCheck', function (req, res) {
             });
     }
 });
-
+router.post('/selectFake', function (req, res) {
+    req.user.selectFake(function (err, result) {
+        if (err) {
+            res.status(400)
+                .json({
+                    ppResult: 'err',
+                    ppMsg: err.ppMsg ? err.ppMsg : null,
+                    err: err
+                });
+        } else {
+            res.json({
+                ppResult: 'ok'
+            });
+        }
+    });
+});
 module.exports = router;

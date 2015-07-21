@@ -48,7 +48,8 @@ var UserSchema = new mongoose.Schema({
     },
     lastLocationTime: Date,
     lastMeetCreateTime: Date,
-    lastFakeTime: Date
+    lastFakeTime: Date,
+    lastRemind: Date
 });
 
 UserSchema.statics.login = function (username, password, callback) {
@@ -697,6 +698,22 @@ UserSchema.methods.sendMeetCheck = function () {
     } else {
         return 'ok';
     }
+};
+
+UserSchema.methods.selectFake = function (callback) {
+    //确定此用户是否是30s内有点击fake
+    var tmpNow = moment()
+        .valueOf();
+    if (this.lastFakeTime > moment(tmpNow)
+            .add(-30, 's')
+            .valueOf()) {
+        //如果是则把meet最后发送时间改为now
+        this.lastMeetCreateTime = tmpNow;
+        this.lastFakeTime = undefined;
+    } else {
+        this.lastFakeTime = tmpNow;
+    }
+    this.save(callback);
 };
 
 module.exports = UserSchema;
