@@ -431,6 +431,7 @@ UserSchema.methods.createMeetNo = function (
                         targetUnread: true,
                         createTime: moment().valueOf(),
                         status: '待确认',
+                        newMatchNum: 0,
                         replyLeft: 2,
                         mapLoc: {
                             name: mapLocName,

@@ -28,6 +28,7 @@ var MeetSchema = new mongoose.Schema({
         enum: ['待确认', '待回复', '成功'],
         required: true
     },
+    newMatchNum: Number,
     replyLeft: {
         type: Number,
         default: 2,
