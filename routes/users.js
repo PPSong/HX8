@@ -263,7 +263,7 @@ router.post('/updateSpecialInfo', function (req, res) {
             //上传到hxbase
             try {
                 hxbaseUsers.child(req.user.username)
-                    .update({specialInfo: JSON.parse(JSON.stringify(req.user.specialInfo))}, function(err){
+                    .set(JSON.parse(JSON.stringify(req.user)), function(err){
                         if (err)
                         {
                             res.status(400)
@@ -276,18 +276,128 @@ router.post('/updateSpecialInfo', function (req, res) {
                         else
                         {
                             //通知附近有发送待确认meet中条件匹配的创建者
-                            //todo
-                            res.json({
-                                ppResult: 'ok',
-                                ppData: req.user.specialInfoTime
-                            });
+                            Meet.aggregate(
+                                [{
+                                    $geoNear: {
+                                        near: {
+                                            type: "Point",
+                                            coordinates: req.user.lastLocation
+                                        },
+                                        distanceField: "personLoc",
+                                        maxDistance: 500,
+                                        query: {
+                                            "specialInfo.sex": req.user.specialInfo.sex,
+                                            "createrUsername": {
+                                                $ne: req.user.username
+                                            }
+                                        },
+                                        spherical: true
+                                    }
+                                }, {
+                                    $project: {
+                                        newMatchNum: 1,
+                                        score: {
+                                            $add: [{
+                                                $cond: [{
+                                                    $eq: ["$specialInfo.hair", req.user.specialInfo.hair]
+                                                },
+                                                    1,
+                                                    0
+                                                ]
+                                            }, {
+                                                $cond: [{
+                                                    $eq: ["$specialInfo.glasses", req.user.specialInfo.glasses]
+                                                },
+                                                    1,
+                                                    0
+                                                ]
+                                            }, {
+                                                $cond: [{
+                                                    $eq: ["$specialInfo.clothesType", req.user.specialInfo.clothesType]
+                                                },
+                                                    1,
+                                                    0
+                                                ]
+                                            }, {
+                                                $cond: [{
+                                                    $eq: ["$specialInfo.clothesColor", req.user.specialInfo.clothesColor]
+                                                },
+                                                    1,
+                                                    0
+                                                ]
+                                            }, {
+                                                $cond: [{
+                                                    $eq: ["$specialInfo.clothesStyle", req.user.specialInfo.clothesStyle]
+                                                },
+                                                    1,
+                                                    0
+                                                ]
+                                            }]
+                                        }
+                                    }
+                                }, {
+                                    $match: {
+                                        score: {
+                                            $gte: 4
+                                        }
+                                    }
+                                }]
+                            )
+                                .exec(function(err, results){
+                                    if (err)
+                                    {
+                                        res.status(400)
+                                            .json({
+                                                ppResult: 'err',
+                                                ppMsg: err.ppMsg ? err.ppMsg : '个人特征更新失败5!',
+                                                err: err
+                                            });
+                                    }
+                                    else
+                                    {
+                                        for (var i = 0; i < results.length; i++)
+                                        {
+                                            var cur = i;
+                                            Meet.update(
+                                                {_id: results[i]._id},
+                                                { $inc: { newMatchNum: 1 }},
+                                                function(err, raw){
+                                                    if (err)
+                                                    {
+                                                        console.log(error);
+                                                    }
+                                                    else
+                                                    {
+                                                        //restful 上传到firebase
+                                                        request({
+                                                                url: 'https://pphx.firebaseio.com/meets/'+results[cur]._id+'/.json',
+                                                                method: 'PATCH',
+                                                                json: {
+                                                                    "newMatchNum": (results[cur].newMatchNum + 1),
+                                                                }
+                                                            },
+                                                            function (error, response, body) {
+                                                                console.log(error);
+                                                            }
+                                                        );
+                                                    }
+
+                                                }
+                                            );
+                                        }
+                                        res.json({
+                                            ppResult: 'ok',
+                                            ppData: req.user.specialInfoTime
+                                        });
+                                    }
+                                });
                         }
                     });
             } catch (err) {
                 res.status(400)
                     .json({
                         ppResult: 'err',
-                        ppMsg: err.ppMsg ? err.ppMsg : '个人特征更新失败3!',
+                        ppMsg: err.ppMsg ? err.ppMsg : '个人特征更新失败4!',
                         err: err
                     });
             }
@@ -1064,5 +1174,52 @@ router.post('/selectFake', function (req, res) {
             });
         }
     });
+});
+
+router.post('/resetNewMatchNum', function (req, res) {
+    req.assert('meetId', 'required')
+        .notEmpty();
+    var errors = req.validationErrors();
+    if (errors) {
+        res.status(400)
+            .json({
+                ppResult: 'err',
+                ppMsg: "缺少必填项!",
+                err: parseError(errors)
+            });
+        return;
+    }
+
+    Meet.update(
+        {_id: req.meetId},
+        {newMatchNum: 0},
+        function(err, raw){
+            if (err) {
+                res.status(400)
+                    .json({
+                        ppResult: 'err',
+                        ppMsg: err.ppMsg ? err.ppMsg : null,
+                        err: err
+                    });
+            } else {
+                //restful 上传到firebase
+                request({
+                        url: 'https://pphx.firebaseio.com/meets/'+req.body.meetId+'/.json',
+                        method: 'PATCH',
+                        json: {
+                            "newMatchNum": 0,
+                        }
+                    },
+                    function (error, response, body) {
+                        console.log(error);
+                    }
+                );
+                res.json({
+                    ppResult: 'ok'
+                });
+            }
+        }
+    );
+
 });
 module.exports = router;
